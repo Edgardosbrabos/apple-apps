@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Maçãs Top-Down Confortáveis</title>
+<style>
+  body { margin: 0; overflow: hidden; }
+  canvas { display: block; touch-action: none; }
+  #score { position:absolute; top:10px; left:10px; font-size:24px; color:white; font-family:sans-serif; }
+</style>
+
+<!-- Manifest PWA -->
+<link rel="manifest" href="manifest.json">
+
+<!-- Service Worker -->
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => console.log('SW registrado:', reg.scope))
+      .catch(err => console.log('Erro SW:', err));
+  });
+}
+</script>
+</head>
+<body>
+<div id="score">Pontos: 0</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+// --- Cena, câmera e renderizador ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+
+const mapSize = 100;
+const zoom = 35;
+const camera = new THREE.OrthographicCamera(
+    window.innerWidth / -zoom, window.innerWidth / zoom,
+    window.innerHeight / zoom, window.innerHeight / -zoom,
+    1, 100
+);
+camera.position.set(0, 50, 0);
+camera.lookAt(0,0,0);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+// --- Luz ---
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(20, 50, 20);
+light.castShadow = true;
+scene.add(light);
+
+// --- Chão ---
+const floorGeometry = new THREE.PlaneGeometry(mapSize,mapSize);
+const floorMaterial = new THREE.MeshStandardMaterial({color:0x228B22});
+const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// --- Cesta confortável ---
+const basketRadius = 7; // maior, mas confortável
+const basketHeight = 2;
+
+// Base da cesta
+const basketBaseGeo = new THREE.CylinderGeometry(basketRadius-0.5,basketRadius-0.5,0.5,32);
+const basketBaseMat = new THREE.MeshStandardMaterial({color:0x8B4513});
+const basketBase = new THREE.Mesh(basketBaseGeo,basketBaseMat);
+basketBase.position.y = 0.25;
+basketBase.castShadow = true;
+
+// Borda da cesta
+const basketEdgeGeo = new THREE.TorusGeometry(basketRadius-0.2,0.5,16,100);
+const basketEdgeMat = new THREE.MeshStandardMaterial({color:0xA0522D});
+const basketEdge = new THREE.Mesh(basketEdgeGeo,basketEdgeMat);
+basketEdge.rotation.x = Math.PI/2;
+basketEdge.position.y = basketHeight-0.1;
+basketEdge.castShadow = true;
+
+// Grupo cesta
+const basket = new THREE.Group();
+basket.add(basketBase);
+basket.add(basketEdge);
+basket.position.y = 0;
+scene.add(basket);
+
+// --- Arraste ---
+let isDragging = false;
+let dragOffset = new THREE.Vector3();
+const planeY = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// --- Pontuação ---
+let score = 0;
+const scoreDiv = document.getElementById('score');
+
+// --- Input ---
+function startDrag(event){
+    let x = event.touches ? event.touches[0].clientX : event.clientX;
+    let y = event.touches ? event.touches[0].clientY : event.clientY;
+
+    mouse.x = (x / window.innerWidth) * 2 - 1;
+    mouse.y = -(y / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObject(basketBase);
+    if(intersects.length > 0){
+        isDragging = true;
+        dragOffset.copy(intersects[0].point).sub(basket.position);
+    }
+}
+
+function moveDrag(event){
+    if(!isDragging) return;
+    let x = event.touches ? event.touches[0].clientX : event.clientX;
+    let y = event.touches ? event.touches[0].clientY : event.clientY;
+
+    mouse.x = (x / window.innerWidth) * 2 - 1;
+    mouse.y = -(y / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersect = new THREE.Vector3();
+    raycaster.ray.intersectPlane(planeY, intersect);
+
+    basket.position.x = THREE.MathUtils.clamp(intersect.x - dragOffset.x, -mapSize/2+basketRadius, mapSize/2-basketRadius);
+    basket.position.z = THREE.MathUtils.clamp(intersect.z - dragOffset.z, -mapSize/2+basketRadius, mapSize/2-basketRadius);
+}
+
+function endDrag(){ isDragging = false; }
+
+renderer.domElement.addEventListener('mousedown', startDrag);
+renderer.domElement.addEventListener('mousemove', moveDrag);
+renderer.domElement.addEventListener('mouseup', endDrag);
+renderer.domElement.addEventListener('touchstart', startDrag);
+renderer.domElement.addEventListener('touchmove', moveDrag);
+renderer.domElement.addEventListener('touchend', endDrag);
+renderer.domElement.addEventListener('touchcancel', endDrag);
+
+// --- Maçãs GRANDES, confortáveis ---
+const appleRadius = 2; // maior, mas ainda confortável
+const appleGeometry = new THREE.SphereGeometry(appleRadius,16,16);
+const appleMaterial = new THREE.MeshStandardMaterial({color:0xff0000});
+const apples = [];
+const appleShadows = [];
+const numApples = 4;
+
+for(let i=0;i<numApples;i++){
+    const apple = new THREE.Mesh(appleGeometry, appleMaterial);
+    apple.position.set(Math.random()*mapSize-mapSize/2, Math.random()*15+20, Math.random()*mapSize-mapSize/2);
+    apple.vy = -0.05;
+    apple.castShadow = true;
+    scene.add(apple);
+    apples.push(apple);
+
+    const shadowGeo = new THREE.CircleGeometry(appleRadius,16);
+    const shadowMat = new THREE.MeshBasicMaterial({color:0x000000, opacity:0.3, transparent:true});
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.rotation.x = -Math.PI/2;
+    scene.add(shadow);
+    appleShadows.push(shadow);
+}
+
+// --- Loop principal ---
+function animate(){
+    requestAnimationFrame(animate);
+
+    apples.forEach((apple, idx)=>{
+        apple.position.y += apple.vy;
+
+        appleShadows[idx].position.x = apple.position.x;
+        appleShadows[idx].position.z = apple.position.z;
+        appleShadows[idx].position.y = 0.05;
+
+        const dx = apple.position.x - basket.position.x;
+        const dz = apple.position.z - basket.position.z;
+        if(apple.position.y <= 0.5 && Math.abs(dx)<=basketRadius && Math.abs(dz)<=basketRadius){
+            score++;
+            scoreDiv.innerHTML = `Pontos: ${score}`;
+            apple.position.y = Math.random()*15+20;
+            apple.position.x = Math.random()*mapSize-mapSize/2;
+            apple.position.z = Math.random()*mapSize-mapSize/2;
+        }
+
+        if(apple.position.y <= 0){
+            apple.position.y = Math.random()*15+20;
+            apple.position.x = Math.random()*mapSize-mapSize/2;
+            apple.position.z = Math.random()*mapSize-mapSize/2;
+        }
+    });
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+// --- Responsividade ---
+window.addEventListener('resize', () => {
+    camera.left = window.innerWidth / -zoom;
+    camera.right = window.innerWidth / zoom;
+    camera.top = window.innerHeight / zoom;
+    camera.bottom = window.innerHeight / -zoom;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
